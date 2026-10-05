@@ -1,0 +1,92 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validPolicy(p) {
+      return p in ['all_group_messages', 'mentioned_members', 'direct_messages_only', 'disabled'];
+    }
+
+    // Validação completa do grupo. O limite é verificado em TODA escrita:
+    // como o Firestore avalia a regra contra o documento resultante de cada escrita
+    // (e transações concorrentes são serializadas), nunca é possível persistir
+    // memberIds.size() > memberLimit, mesmo com requisições simultâneas.
+    function validGroup(d) {
+      return d.name is string && d.name.size() >= 2 && d.name.size() <= 60
+        && d.photoUrl is string
+        && d.memberLimit is int && d.memberLimit >= 2 && d.memberLimit <= 256
+        && d.memberIds is list && d.memberIds.size() >= 2
+        && d.memberIds.size() <= d.memberLimit
+        && d.ownerId in d.memberIds
+        && validPolicy(d.notificationPolicy)
+        && d.createdAt is int && d.updatedAt is int;
+    }
+
+    // Perfil completo (e-mail, celular, nascimento): somente o próprio usuário.
+    // Outros usuários acessam via API, que verifica conversa/grupo em comum.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.name is string
+        && request.resource.data.photoUrl is string;
+      allow delete: if false;
+
+      // Tokens de dispositivos: privados ao dono. A API lê via Admin SDK.
+      match /devices/{deviceId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // Dados públicos mínimos para a lista/busca de usuários.
+    match /publicProfiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'photoUrl'])
+        && request.resource.data.uid == uid;
+      allow delete: if false;
+    }
+
+    match /groups/{groupId} {
+      // Somente integrantes ativos leem o grupo.
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && validGroup(request.resource.data);
+
+      // Proprietário gerencia o grupo (não pode transferir a posse nem alterar createdAt).
+      allow update: if signedIn() && (
+        (
+          resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validGroup(request.resource.data)
+        ) || (
+          // Integrante (não dono) pode apenas sair do grupo.
+          request.auth.uid in resource.data.memberIds
+          && request.auth.uid != resource.data.ownerId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'updatedAt'])
+          && request.resource.data.memberIds == resource.data.memberIds.removeAll([request.auth.uid])
+        )
+      );
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Criadas apenas pela API (Admin SDK), garantindo 2 participantes e id único por par.
+    match /directConversations/{conversationId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participantIds;
+      allow write: if false;
+    }
+
+    // Controle de idempotência do push: acessível somente pela API.
+    match /notificationDispatches/{id} {
+      allow read, write: if false;
+    }
+  }
+}
