@@ -228,4 +228,5 @@ Conversas individuais sempre notificam o outro participante. Em todos os casos o
 - [x] Regras de Firestore, RTDB e Storage versionadas
 - [ ] Preencher integrantes, URL da API e prints
 #   f o r d - n e x u s  
+ #   f o r d - n e x u s  
  
