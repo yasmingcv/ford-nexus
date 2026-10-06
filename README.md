@@ -1,232 +1,268 @@
-# 💬 ChatFirebase — Chat individual e em grupo com Firebase e Push
+# ChatFirebase
 
-Aplicativo de chat em **React Native + Expo + TypeScript** com conversas individuais e em grupo, mensagens em tempo real no **Firebase Realtime Database**, perfis/grupos/configurações no **Cloud Firestore**, fotos no **Firebase Storage** e **push notifications** enviadas por uma **API própria** (Node.js + Express) usando **Firebase Cloud Messaging**.
+App de chat feito em React Native com Expo para o CP5. Tem conversa individual, grupos e notificação push enviada por uma API nossa.
 
 ## Integrantes
 
-- RM00000 — Nome Completo
-- RM00000 — Nome Completo
+Nome - RM 
+Ana Clara Melo - RM 559021
+David Murillo de Oliveira Soares - RM 559078
+Lucas Serrano - RM555170
+Yasmin Gonçalves Coelho - RM 559147
 
-> ⚠️ Preencha nome completo e RM de todos os integrantes (máx. 5).
+## API
 
----
+URL: https://ford-nexus.onrender.com/
 
-## 🧰 Tecnologias
+Pra testar se está no ar, abra https://ford-nexus.onrender.com/health no navegador. Tem que aparecer `{"status":"ok", ...}`.
+Obs: estamos no plano free do Render, então se a API ficar parada um tempo a primeira requisição demora uns 30-50 segundos pra responder. Depois volta ao normal.
 
-| Camada | Tecnologia |
+## Prints
+
+| Login | Cadastro | Conversas |
+|---|---|---|
+| ![](docs/prints/01-login.png) | ![](docs/prints/02-cadastro.png) | ![](docs/prints/03-conversas.png) |
+
+| Chat individual | Chat em grupo | Menção |
+|---|---|---|
+| ![](docs/prints/04-chat-individual.png) | ![](docs/prints/05-chat-grupo.png) | ![](docs/prints/06-mencao.png) |
+
+| Criar/editar grupo | Integrantes | Grupo cheio |
+|---|---|---|
+| ![](docs/prints/07-grupo-form.png) | ![](docs/prints/08-integrantes.png) | ![](docs/prints/09-limite.png) |
+
+| Perfil | Erro | Health check |
+|---|---|---|
+| ![](docs/prints/10-perfil.png) | ![](docs/prints/11-erro.png) | ![](docs/prints/12-health.png) |
+
+Notificações recebidas:
+
+| App fechado | App em segundo plano | Só o mencionado recebeu |
+|---|---|---|
+| ![](docs/prints/13-push-fechado.png) | ![](docs/prints/14-push-background.png) | ![](docs/prints/15-push-mencao.png) |
+
+## Tecnologias
+
+- React Native 0.86 com Expo SDK 57
+- TypeScript (strict, sem `any`)
+- React Navigation 7
+- Firebase Authentication (só e-mail e senha)
+- Firebase Realtime Database
+- Cloud Firestore
+- Firebase Storage
+- Firebase Cloud Messaging + expo-notifications
+- API: Node 20, Express 5 e Firebase Admin SDK, hospedada no Render
+
+Não usamos Cloud Functions, todo push sai da nossa API.
+
+## Onde fica cada coisa no Firebase
+
+A gente dividiu assim:
+
+**Realtime Database** - as mensagens, em `messages/{conversationId}/{messageId}`. Escolhemos o RTDB pra isso porque ele é mais rápido pra esse tipo de coisa que chega o tempo todo, e o app escuta com `onChildAdded`. Também fica lá o `conversationMembers/{conversationId}/{uid}`, que as regras usam pra saber quem pode ler cada conversa.
+
+**Firestore** - o resto:
+- `users/{uid}` - perfil completo (nome, celular, nascimento, foto). Só o dono lê.
+- `publicProfiles/{uid}` - só nome e foto, pra aparecer na lista de usuários sem expor o celular de ninguém.
+- `users/{uid}/devices/{deviceId}` - tokens de push.
+- `groups/{groupId}` - dados do grupo, integrantes, `memberLimit` e `notificationPolicy`.
+- `directConversations/{id}` - conversas individuais.
+- `notificationDispatches/{id}` - registro dos pushes já enviados (pra não repetir).
+
+**Authentication** - cadastro, login e sessão salva com AsyncStorage.
+
+**Storage** - fotos de perfil (`images/users/{uid}/profile.jpg`) e de grupo (`images/groups/{groupId}/photo.jpg`). No Firestore salvamos só a URL, sem Base64.
+
+**Cloud Messaging** - entrega do push no Android.
+
+## Funcionalidades
+
+- Cadastro com nome, celular, data de nascimento, foto, e-mail e senha
+- Conversa individual (o id é gerado a partir dos dois uids, então não duplica, e não dá pra conversar consigo mesmo)
+- Grupos com foto, limite de integrantes e política de notificação
+- O dono do grupo pode adicionar/remover pessoas e editar as informações. Os outros só podem sair
+- Menção com `@Nome` ou pelo botão @ do chat
+- Tocar na foto abre o perfil da pessoa ou do grupo
+- Aviso quando o celular está sem internet
+
+Quem é removido de um grupo para de ver as mensagens novas, porque a API tira a pessoa do `conversationMembers` e a regra do RTDB bloqueia.
+
+## Limite de integrantes
+
+O limite é definido quando o grupo é criado (entre 2 e 256) e só o dono pode mudar. Não dá pra colocar um limite menor do que a quantidade de pessoas que já estão no grupo.
+
+Na tela aparece quantas vagas restam e "Grupo sem vagas" quando lota, mas só isso não resolve o caso de duas pessoas adicionarem alguém ao mesmo tempo. Por isso:
+
+1. Toda alteração de integrantes é feita com `runTransaction` (em `groupService.ts`). Se duas transações mexem no mesmo grupo ao mesmo tempo, o Firestore refaz a segunda com os dados novos, e aí ela vê que não tem vaga.
+2. A regra `validGroup` no `firestore.rules` verifica `memberIds.size() <= memberLimit` em qualquer escrita. Então mesmo que alguém altere o app, o banco não aceita salvar o grupo acima do limite.
+
+## Políticas de notificação
+
+| Política | Comportamento |
 |---|---|
-| App | React Native 0.86, **Expo SDK 57**, TypeScript (strict, sem `any`) |
-| Navegação | React Navigation 7 (native-stack) |
-| Autenticação | Firebase Authentication (somente e-mail/senha) |
-| Mensagens | Firebase Realtime Database |
-| Perfis, grupos, tokens | Cloud Firestore |
-| Fotos | Firebase Storage |
-| Push | Firebase Cloud Messaging (Android) + Expo Push Service (iOS/APNs), via `expo-notifications` |
-| API | Node.js 20+, Express 5, Firebase Admin SDK, TypeScript |
+| `all_group_messages` | todos do grupo recebem, menos quem enviou |
+| `mentioned_members` | só quem foi mencionado |
+| `direct_messages_only` | mensagens do grupo não notificam, só as conversas individuais |
+| `disabled` | o grupo não gera push |
 
----
+Nas conversas individuais o outro participante sempre recebe. Quem enviou nunca recebe a própria notificação.
 
-## 🔥 Responsabilidade de cada serviço
+A lista de quem recebe é calculada na API, o app só manda o id da conversa e da mensagem. Fizemos assim pra ninguém conseguir mandar push pra quem quiser alterando o app.
 
-| Serviço | Uso |
-|---|---|
-| **Authentication** | cadastro, login, persistência/recuperação da sessão (AsyncStorage), `uid`, logout. A API rejeita tokens que não sejam `password`. |
-| **Realtime Database** | `messages/{conversationId}/{messageId}` — todas as mensagens; listeners `onChildAdded` em tempo real. `conversationMembers/{conversationId}/{uid}` — espelho dos participantes usado pelas regras de segurança. |
-| **Cloud Firestore** | `users/{uid}` (perfil completo, privado), `publicProfiles/{uid}` (nome + foto para busca), `users/{uid}/devices/{deviceId}` (tokens), `groups/{groupId}` (metadados, integrantes, `memberLimit`, `notificationPolicy`), `directConversations/{id}`, `notificationDispatches/{id}` (idempotência do push). |
-| **Cloud Messaging** | entrega das notificações no Android (app em primeiro plano, segundo plano ou fechado), com `conversationId` e `conversationType` no payload. |
-| **Storage** | fotos de perfil (`images/users/{uid}/profile.jpg`) e de grupo (`images/groups/{groupId}/photo.jpg`). Apenas a URL final é salva no Firestore — nunca Base64. |
+A notificação não mostra o texto da mensagem, e quando a pessoa toca nela o app abre na conversa.
 
----
+## Como o push funciona
 
-## 📁 Estrutura
+1. O app salva a mensagem no RTDB
+2. Chama `POST /notifications/messages` mandando o token do usuário
+3. A API valida o token com o Admin SDK (e confere se o login foi por e-mail/senha)
+4. Lê a mensagem no RTDB e confere se quem está pedindo é quem enviou
+5. Cria o documento `notificationDispatches/{conversa}__{mensagem}`. Se ele já existir, quer dizer que o push já foi enviado, então a API não manda de novo
+6. Calcula os destinatários pela política do grupo
+7. Envia pelo FCM (Android) ou Expo Push (iOS). Tokens inválidos são apagados
 
-```text
-CP5/
-  app/                          # Aplicativo Expo
-    firebaseConfig.json         # config do SDK cliente (sem segredos)
-    firestore.rules             # regras do Firestore
-    database.rules.json         # regras do Realtime Database
-    storage.rules               # regras do Storage
-    firebase.json               # deploy das regras via Firebase CLI
-    .env.example
-    src/
-      App.tsx
-      components/   Avatar, Button, ChatInput, ChatMessage, ConversationItem, EmptyState,
-                    ErrorMessage, GroupMemberItem, Loading, PhotoPicker, TextField
-      contexts/     AuthContext.tsx
-      hooks/        useAuth, useChat, useGroups, useConversations, useNotifications,
-                    usePublicProfiles, useConnectivity
-      navigation/   RootNavigator.tsx
-      screens/      Login, Register, Conversations, Users, GroupForm, GroupMembers, Chat, Profile
-      services/     firebase, authService, userService, groupService, chatService,
-                    notificationService, storageService, apiService
-      types/        user, chat, group, notification, navigation
-      utils/        conversationId, groupValidation, errors
-  server/                       # API online
-    .env.example
-    render.yaml
-    src/
-      app.ts
-      middleware/authenticate.ts
-      routes/       notifications.ts, conversations.ts, profiles.ts
-      services/     firebaseAdmin.ts, notificationSender.ts, recipientResolver.ts, conversationService.ts
-```
+## Rotas da API
 
----
-
-## ⚙️ Configuração do Firebase
-
-1. Crie um projeto no [Firebase Console](https://console.firebase.google.com).
-2. **Authentication** → Sign-in method → habilite **somente E-mail/senha**.
-3. Crie o **Cloud Firestore**, o **Realtime Database** e o **Storage**.
-4. Registre um app **Web** e copie a configuração para `app/firebaseConfig.json` (inclua `databaseURL`).
-5. Registre um app **Android** com o pacote `br.com.fiap.chatfirebase` e baixe o `google-services.json` para `app/` (necessário para o FCM).
-6. Publique as regras:
-
-```bash
-npm install -g firebase-tools
-```
-```bash
-cd app && firebase login && firebase use <project-id> && firebase deploy --only firestore:rules,database,storage
-```
-
-### Credenciais administrativas (API)
-
-Em *Configurações do projeto → Contas de serviço → Gerar nova chave privada*. **Não versione o arquivo.** Copie `project_id`, `client_email` e `private_key` diretamente para as variáveis secretas da hospedagem.
-
----
-
-## 📱 Executando o app
-
-```bash
-cd app
-npm install
-cp .env.example .env    # preencha EXPO_PUBLIC_API_URL e EXPO_PUBLIC_EAS_PROJECT_ID
-```
-
-O push não funciona no Expo Go; use **development build**:
-
-```bash
-npx eas-cli build --profile development --platform android
-```
-```bash
-npx expo start --dev-client
-```
-
-(ou `npx expo run:android` / `npx expo run:ios` com Android Studio/Xcode instalados).
-
-### Notificações — Android
-- `google-services.json` em `app/` (referenciado em `app.json`).
-- O app registra o **token nativo FCM** (`getDevicePushTokenAsync`) em `users/{uid}/devices`.
-- Canal `messages` com importância alta; permissão `POST_NOTIFICATIONS` (Android 13+).
-
-### Notificações — iOS
-- Requer conta Apple Developer e dispositivo físico.
-- `npx eas-cli credentials` → configure a **APNs Key** no EAS.
-- O app registra um **Expo Push Token** (necessita `EXPO_PUBLIC_EAS_PROJECT_ID`, obtido com `npx eas-cli init`); a API envia pelo Expo Push Service, que entrega via APNs.
-
----
-
-## 🌐 API online
-
-- **Tecnologia:** Node.js + Express 5 + Firebase Admin SDK (TypeScript).
-- **URL pública:** `https://SUA-API.onrender.com` ← *preencher após o deploy*
-- **Hospedagem sugerida:** Render (arquivo `server/render.yaml`). Usar plano que não hiberne durante a correção.
-
-### Variáveis (configurar apenas na hospedagem)
-
-`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL`, `EXPO_ACCESS_TOKEN` (opcional), `PORT`.
-
-### Executar localmente (desenvolvimento)
-
-```bash
-cd server && npm install && cp .env.example .env && npm run dev
-```
-
-### Publicar no Render
-1. New → Web Service → conecte o repositório; *Root Directory* `server`.
-2. Build: `npm ci --include=dev && npm run build` — Start: `npm start`.
-3. Adicione as variáveis secretas acima. Health check path: `/health`.
-
-### Endpoints
-
-Todos (exceto `/health`) exigem `Authorization: Bearer <Firebase ID Token>`.
+Todas menos `/health` precisam do header `Authorization: Bearer <token do Firebase>`.
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/health` | Disponibilidade da API (`{"status":"ok"}`) |
-| POST | `/notifications/messages` | `{ conversationId, messageId }` — valida a mensagem e envia o push |
-| POST | `/conversations/direct` | `{ otherUserId }` — cria/localiza a conversa individual |
-| POST | `/groups/:groupId/sync` | espelha integrantes do grupo no Realtime Database |
-| GET | `/profiles/:uid` | perfil completo, somente se houver conversa/grupo em comum |
-
-Verificar disponibilidade:
+| GET | `/health` | status da API |
+| POST | `/notifications/messages` | envia o push de uma mensagem (`{ conversationId, messageId }`) |
+| POST | `/conversations/direct` | cria ou busca a conversa individual (`{ otherUserId }`) |
+| POST | `/groups/:groupId/sync` | atualiza os integrantes do grupo no RTDB |
+| GET | `/profiles/:uid` | perfil completo, só se vocês tiverem conversa ou grupo em comum |
 
 ```bash
 curl https://SUA-API.onrender.com/health
 ```
 
-### Fluxo do push
+As variáveis de ambiente (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL` e `EXPO_ACCESS_TOKEN`, que é opcional) ficam só no Render. No repositório tem apenas o `server/.env.example`.
 
-1. App grava a mensagem no RTDB (`messages/{conversationId}/{messageId}`).
-2. App chama `POST /notifications/messages` com o ID Token.
-3. API valida o token (Admin SDK, com verificação de revogação).
-4. API lê a mensagem no RTDB e confirma `senderId === uid`.
-5. API cria `notificationDispatches/{conversationId}__{messageId}` com `create()` — se já existir, responde `duplicate: true` (**proteção contra chamadas duplicadas**).
-6. API lê participantes e política no Firestore e **calcula os destinatários no servidor**.
-7. Envia via FCM (`sendEachForMulticast`) e/ou Expo Push; tokens inválidos (`registration-token-not-registered`, `DeviceNotRegistered`) são **removidos**.
-8. O texto do push não inclui o conteúdo da mensagem. Payload: `{ conversationId, conversationType }`. Ao tocar, o app abre a conversa.
+## Segurança
 
----
+- `app/firestore.rules`: perfil completo só pro próprio usuário, tokens privados, grupo só visível pra quem está nele e editável só pelo dono. `directConversations` e `notificationDispatches` só a API escreve.
+- `app/database.rules.json`: só quem está em `conversationMembers` lê e escreve mensagens, o `senderId` tem que ser o próprio usuário, mensagem não pode ser editada depois de enviada e o tamanho do texto é limitado.
+- `app/storage.rules`: só imagem, até 5 MB. Foto do grupo só o dono troca.
+- Nenhuma regra está aberta.
+- O `firebaseConfig.json` tem só a config do SDK do cliente. Credencial de admin fica só no Render.
 
-## 🔔 Política de notificações
+Algumas validações precisam olhar o Firestore e o RTDB juntos (ex: ver se a pessoa está no grupo antes de liberar as mensagens), e as regras de um banco não leem o outro. Essas ficaram na API.
 
-| Política | Comportamento em grupos |
-|---|---|
-| `all_group_messages` | todos os integrantes, exceto o remetente |
-| `mentioned_members` | apenas integrantes mencionados (`@Nome` no texto) ou selecionados pelo botão **@** |
-| `direct_messages_only` | mensagens do grupo não geram push; só conversas individuais |
-| `disabled` | nenhuma mensagem do grupo gera push |
+## Organização do código
 
-Conversas individuais sempre notificam o outro participante. Em todos os casos o remetente é excluído e só participantes atuais são considerados. A política é definida pelo proprietário na criação/edição do grupo.
+```text
+ford-nexus/
+├── app/
+│   ├── firebaseConfig.json
+│   ├── firestore.rules
+│   ├── database.rules.json
+│   ├── storage.rules
+│   ├── .env.example
+│   └── src/
+│       ├── components/   Avatar, Button, ChatInput, ChatMessage, ConversationItem,
+│       │                 EmptyState, ErrorMessage, GroupMemberItem, Loading, PhotoPicker, TextField
+│       ├── contexts/     AuthContext
+│       ├── hooks/        useAuth, useChat, useGroups, useConversations,
+│       │                 useNotifications, usePublicProfiles, useConnectivity
+│       ├── navigation/   RootNavigator
+│       ├── screens/      Login, Register, Conversations, Users, GroupForm,
+│       │                 GroupMembers, Chat, Profile
+│       ├── services/     firebase, auth, user, group, chat, notification, storage, api
+│       ├── types/
+│       └── utils/
+├── server/
+│   ├── .env.example
+│   ├── render.yaml
+│   └── src/
+│       ├── app.ts
+│       ├── middleware/   authenticate
+│       ├── routes/       notifications, conversations, profiles
+│       └── services/     firebaseAdmin, notificationSender, recipientResolver, conversationService
+└── docs/prints/
+```
 
----
+As telas não chamam o Firebase direto, passam pelos `services`. A lógica de estado fica nos `hooks`.
 
-## 👥 Limite de integrantes e concorrência
+Sobre os hooks: o `useEffect` abre e fecha os listeners do Firebase (quando sai do chat o listener é removido). O `useMemo` no `GroupFormScreen` calcula as vagas e a validação do grupo só quando nome, limite ou integrantes mudam. O `useCallback` no `ChatScreen` é usado no `renderItem` da lista de mensagens pra ela não renderizar tudo de novo enquanto a pessoa digita.
 
-- `memberLimit` é definido na criação, validado como inteiro (2–256) e editável pelo proprietário; não pode ficar abaixo do número atual de integrantes.
-- A interface mostra `N de LIMITE` e as vagas restantes ("Grupo sem vagas" quando cheio).
-- **Proteção real:** toda alteração de integrantes é feita com `runTransaction` no Firestore, e as **regras** (`firestore.rules → validGroup`) exigem em *toda* escrita que `memberIds.size() <= memberLimit`. Como o Firestore serializa escritas concorrentes no mesmo documento (a transação que perde é reexecutada sobre o estado novo) e a regra é avaliada sobre o documento resultante, é impossível persistir um grupo acima do limite, mesmo com requisições simultâneas ou com um cliente modificado.
+## Como rodar
 
----
+### Firebase
 
-## 🔒 Segurança
+1. Criar o projeto no Firebase Console
+2. Em Authentication, habilitar só E-mail/senha
+3. Criar Firestore, Realtime Database e Storage
+4. Registrar um app Web e colocar a config em `app/firebaseConfig.json` (com o `databaseURL`)
+5. Registrar um app Android com o pacote `br.com.fiap.chatfirebase` e colocar o `google-services.json` em `app/`
+6. Publicar as regras:
 
-- **Firestore** (`app/firestore.rules`): perfil completo só para o próprio usuário; `publicProfiles` só nome/foto; tokens (`devices`) privados ao dono; grupo lido só por integrantes e gerenciado só pelo dono; integrante só pode remover a si mesmo; `directConversations` e `notificationDispatches` só pela API.
-- **Realtime Database** (`app/database.rules.json`): leitura/escrita de mensagens apenas por quem está em `conversationMembers/{id}`; `senderId === auth.uid`; mensagens imutáveis; tamanho do texto validado; `conversationMembers` escrito somente pela API. Usuários removidos perdem acesso imediatamente após o `sync`.
-- **Storage** (`app/storage.rules`): só imagens < 5 MB; foto do grupo só pelo dono (consulta cross-service ao Firestore).
-- **Decisão documentada:** como os dados estão divididos entre Firestore e RTDB, as validações que dependem dos dois (criação de conversa individual, espelho de integrantes, perfil de terceiros e push) são executadas pela **API**.
-- `firebaseConfig.json` contém apenas a configuração do SDK cliente. Nenhuma credencial administrativa está no app ou no repositório.
+```bash
+npm install -g firebase-tools
+cd app
+firebase login
+firebase use <id-do-projeto>
+firebase deploy --only firestore:rules,database,storage
+```
 
----
+### Storage (fotos)
 
-## 📸 Prints
+As fotos de perfil e de grupo ficam no Firebase Storage. Pra configurar:
 
-> Adicione aqui os prints das telas (Login, Cadastro, Conversas, Usuários, Grupo, Chat, Perfil) e a evidência da notificação recebida.
+1. No Firebase Console, ir em Storage > Começar e escolher a mesma região do Firestore. (Projetos novos precisam estar no plano Blaze pra criar o bucket, mas o uso fica dentro da cota grátis.)
+2. Conferir se o `storageBucket` está preenchido no `app/firebaseConfig.json`
+3. Publicar o `app/storage.rules` (já entra no comando de deploy acima)
 
----
+O app comprime a foto na hora de escolher (qualidade 0.6), sobe pro Storage e salva só a URL de download no Firestore (campo `photoUrl` no perfil e no grupo).
 
-## ✅ Checklist
+### App
 
-- [x] Expo SDK 57 + TypeScript sem `any`
-- [x] Login/cadastro somente e-mail e senha, com nome, celular, nascimento e foto
-- [x] Sessão persistida e logout (remove token do dispositivo, desmonta listeners)
-- [x] Conversa individual com id determinístico por par
-- [x] Grupos com dono, foto, integrantes, limite e política
-- [x] Mensagens no RTDB em tempo real; metadados no Firestore
-- [x] Push pela API com FCM, idempotência e remoção de tokens inválidos
-- [x] Regras de Firestore, RTDB e Storage versionadas
-- [ ] Preencher integrantes, URL da API e prints
-#   f o r d - n e x u s  
- #   f o r d - n e x u s  
- 
+```bash
+cd app
+npm install
+cp .env.example .env
+```
+
+No `.env`, preencher `EXPO_PUBLIC_API_URL` com a URL da API e `EXPO_PUBLIC_EAS_PROJECT_ID`.
+
+O push não funciona no Expo Go, precisa de development build:
+
+```bash
+npx eas-cli build --profile development --platform android
+npx expo start --dev-client
+```
+
+Também dá pra usar `npx expo run:android` se tiver o Android Studio instalado.
+
+### API local (opcional, a online já está funcionando)
+
+```bash
+cd server
+npm install
+cp .env.example .env
+npm run dev
+```
+
+## Notificações no Android e iOS
+
+Android:
+- `google-services.json` em `app/`, já configurado no `app.json`
+- Permissão `POST_NOTIFICATIONS` (Android 13+)
+- Canal `messages` com prioridade alta
+- O token FCM é salvo em `users/{uid}/devices` no login e removido no logout
+
+iOS:
+- Precisa de conta Apple Developer e iPhone físico
+- Configurar a chave APNs com `npx eas-cli credentials`
+- O app registra um Expo Push Token (por isso precisa do `EXPO_PUBLIC_EAS_PROJECT_ID`, que vem do `npx eas-cli init`) e a API envia pelo Expo Push Service
+
+## Deploy da API no Render
+
+1. New > Web Service, conectar o repositório
+2. Language: Node / Root Directory: `server`
+3. Build Command: `npm ci --include=dev && npm run build`
+4. Start Command: `npm start`
+5. Health Check Path: `/health`
+6. Adicionar as variáveis do Firebase em Environment
+
+A `FIREBASE_PRIVATE_KEY` pode ser colada com os `\n` do JSON mesmo, o código converte.

@@ -12,13 +12,18 @@
       "bundleIdentifier": "br.com.fiap.chatfirebase",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Usamos sua galeria para escolher fotos de perfil e de grupo.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "br.com.fiap.chatfirebase",
       "googleServicesFile": "./google-services.json",
-      "permissions": ["POST_NOTIFICATIONS"],
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -33,11 +38,24 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-dev-client",
-      ["expo-notifications", { "color": "#2563EB" }],
+      [
+        "expo-notifications",
+        {
+          "color": "#2563EB"
+        }
+      ],
       [
         "expo-image-picker",
-        { "photosPermission": "Usamos sua galeria para escolher fotos de perfil e de grupo." }
+        {
+          "photosPermission": "Usamos sua galeria para escolher fotos de perfil e de grupo."
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8ff1462c-315d-41b0-b23e-020692d82559"
+      }
+    },
+    "owner": "yasmingcv"
   }
 }
