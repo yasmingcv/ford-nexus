@@ -4,11 +4,10 @@ App de chat feito em React Native com Expo para o CP5. Tem conversa individual, 
 
 ## Integrantes
 
-Nome - RM 
-Ana Clara Melo - RM 559021
-David Murillo de Oliveira Soares - RM 559078
-Lucas Serrano - RM555170
-Yasmin Gonçalves Coelho - RM 559147
+- Ana Clara Melo - RM 559021
+- David Murillo de Oliveira Soares - RM 559078
+- Lucas Serrano - RM555170
+- Yasmin Gonçalves Coelho - RM 559147
 
 ## API
 
@@ -21,25 +20,16 @@ Obs: estamos no plano free do Render, então se a API ficar parada um tempo a pr
 
 | Login | Cadastro | Conversas |
 |---|---|---|
-| ![](docs/prints/01-login.png) | ![](docs/prints/02-cadastro.png) | ![](docs/prints/03-conversas.png) |
+| ![](docs/prints/01-login.jpeg) | ![](docs/prints/02-cadastro.jpeg) | ![](docs/prints/03-conversas.jpeg) |
 
 | Chat individual | Chat em grupo | Menção |
 |---|---|---|
-| ![](docs/prints/04-chat-individual.png) | ![](docs/prints/05-chat-grupo.png) | ![](docs/prints/06-mencao.png) |
+| ![](docs/prints/04-chat-individual.jpeg) | ![](docs/prints/05-chat-grupo.jpeg) | ![](docs/prints/06-mencao.jpeg) |
 
 | Criar/editar grupo | Integrantes | Grupo cheio |
 |---|---|---|
-| ![](docs/prints/07-grupo-form.png) | ![](docs/prints/08-integrantes.png) | ![](docs/prints/09-limite.png) |
+| ![](docs/prints/07-grupo-form.jpeg) | ![](docs/prints/08-integrantes.jpeg) | ![](docs/prints/09-limite.jpeg) |
 
-| Perfil | Erro | Health check |
-|---|---|---|
-| ![](docs/prints/10-perfil.png) | ![](docs/prints/11-erro.png) | ![](docs/prints/12-health.png) |
-
-Notificações recebidas:
-
-| App fechado | App em segundo plano | Só o mencionado recebeu |
-|---|---|---|
-| ![](docs/prints/13-push-fechado.png) | ![](docs/prints/14-push-background.png) | ![](docs/prints/15-push-mencao.png) |
 
 ## Tecnologias
 
